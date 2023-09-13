@@ -1,0 +1,62 @@
+extern crate reqwest;
+extern crate serde;
+extern crate serde_json;
+extern crate percent_encoding;
+extern crate anyhow;
+
+use anyhow::{Result, anyhow};
+use serde::{Deserialize, Serialize};
+
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+
+#[derive(Serialize, Deserialize, Debug)]
+struct SearchResult {
+    place_id: i64,
+    osm_type: String,
+    osm_id: i64,
+    boundingbox: Vec<String>,
+    lat: f64,
+    lon: f64,
+    display_name: String,
+    class: String,
+    type_: String,
+    importance: f64,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let query = "4409 217th PL SE, Bothell WA 98021";
+    let encoded_query = utf8_percent_encode(query, NON_ALPHANUMERIC).to_string();
+    let endpoint = format!(
+        "https://nominatim.openstreetmap.org/search?q={}&format=json",
+        encoded_query
+    );
+
+    //let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36"")
+    .build()?;
+    let response = client.get(&endpoint).send().await?;
+
+    if response.status().is_success() {
+        let body = response.text().await?;
+        let result: Vec<SearchResult> = serde_json::from_str(&body)
+            .map_err(|e| anyhow!("Failed to parse JSON response: {}", e))?;
+
+        if !result.is_empty() {
+            println!("Results for query '{}':", query);
+            for place in result {
+                println!("  Place Name: {}", place.display_name);
+                println!("  Type: {}", place.type_);
+                println!("  Latitude: {}", place.lat);
+                println!("  Longitude: {}\n", place.lon);
+            }
+        } else {
+            println!("No results found for query '{}'", query);
+        }
+    } else {
+        return Err(anyhow!("Error: Request failed with status code {}", response.status()));
+    }
+
+    Ok(())
+}
